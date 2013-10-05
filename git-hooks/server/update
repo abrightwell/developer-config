@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+#
+# Server side git 'update' hook.
+#
+# The purpose of this hook is to validate the contents of commit messages
+# being pushed to the server.  Currently the check is for the a existence of
+# a Version One User Story Id.
+#
+# Author: Adam Brightwell
+#
+
+refname = ARGV[0]
+oldrev = ARGV[1]
+newrev = ARGV[2]
+
+# ------------------------
+# oldrev..newrev = Command
+# ------------------------
+# 000000..abc123 = Create
+# abc123..000000 = Delete
+# abc123..def456 = Update
+# ------------------------
+
+create = /^0+$/ =~ oldrev
+delete = /^0+$/ =~ newrev
+update = (create && delete)
+
+commit_logs = []
+
+error = false
+
+#
+def check_commit_message(commit_message)
+  /(B-[0-9]{5})/im.match(commit_message).nil?
+end
+
+if create
+  commit_logs = `git log --pretty="%h:%s" $(git for-each-ref --format="%(refname)" "refs/heads/*" | grep -v "#{refname}" | sed 's/^/\^/') #{newrev}`.split("\n")
+elsif delete
+  puts "delete"
+elsif update
+  commit_logs = `git log --pretty="%h:%s" #{oldrev}..#{newrev}`.split("\n")
+end
+
+commit_logs.each do |commit_log|
+  commit = {}
+  commit[:sha1], commit[:msg] = commit_log.split(':')
+  unless check_commit_message(commit[:msg])
+    puts "[Info] - #{commit[:sha1]} has a valid commit message."
+  else
+    puts "[Error] - Missing User Story Id in commit message for commit: #{commit[:sha1]}"
+    error = true
+  end
+end
+
+error ? exit(1) : exit(0)
